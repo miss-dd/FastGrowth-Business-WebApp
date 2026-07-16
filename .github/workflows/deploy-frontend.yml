@@ -23,7 +23,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::382975714531:role/github-actions-s3-deploy
+          role-to-assume: arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Sync to S3
