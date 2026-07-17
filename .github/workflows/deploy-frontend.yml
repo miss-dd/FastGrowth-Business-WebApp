@@ -18,20 +18,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Debug JWT and test STS
-        run: |
-          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
-          JWT=$(echo "$TOKEN" | python3 -c "import json,sys;print(json.load(sys.stdin)['value'])")
-          echo "$JWT" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-          aws sts assume-role-with-web-identity \
-            --role-arn arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy \
-            --role-session-name test \
-            --web-identity-token "$JWT" \
-            --duration-seconds 3600 \
-            --region us-east-1 2>&1
-          echo "RC=$?"
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy
+          aws-region: us-east-1
 
       - name: Sync files to S3
         run: |
