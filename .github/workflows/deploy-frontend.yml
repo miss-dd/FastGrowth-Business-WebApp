@@ -23,19 +23,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug OIDC token
+      - name: Assume role with OIDC
         run: |
-          echo "OIDC token requested"
           TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
-          echo "Token received"
-          echo "$TOKEN" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Claims:', d.get('value','')[:100]+'...')" 2>/dev/null || echo "Could not decode"
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | python3 -c "import json,sys; print(json.load(sys.stdin)['value'])")
+          echo "Token acquired, assuming role..."
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy
-          aws-region: ${{ secrets.AWS_REGION }}
+          CREDS_JSON=$(aws sts assume-role-with-web-identity \
+            --role-arn arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy \
+            --role-session-name GitHubActions \
+            --web-identity-token "$TOKEN" \
+            --duration-seconds 3600 \
+            --region us-east-1 2>&1)
+          echo "Result:"
+          echo "$CREDS_JSON" | python3 -m json.tool 2>/dev/null || echo "$CREDS_JSON"
+
+          if echo "$CREDS_JSON" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
+            AKI=$(echo "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['Credentials']['AccessKeyId'])")
+            SAK=$(echo "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['Credentials']['SecretAccessKey'])")
+            ST=$(echo "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['Credentials']['SessionToken'])")
+            echo "AWS_ACCESS_KEY_ID=$AKI" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=$SAK" >> "$GITHUB_ENV"
+            echo "AWS_SESSION_TOKEN=$ST" >> "$GITHUB_ENV"
+            echo "AWS_REGION=us-east-1" >> "$GITHUB_ENV"
+            echo "Role assumed successfully!"
+          fi
 
       - name: Sync to S3
         run: |
