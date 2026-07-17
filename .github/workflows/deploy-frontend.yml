@@ -28,9 +28,9 @@ jobs:
 
       - name: Sync frontend to S3
         run: |
-          aws s3 sync frontend/ s3://${{ secrets.S3_BUCKET }} \
-            --delete \
-            --exclude ".git/*"
+          aws s3 sync frontend/public/ s3://${{ secrets.S3_BUCKET }} --delete
+          aws s3 sync frontend/assets/ s3://${{ secrets.S3_BUCKET }}/assets/
+          aws s3 sync frontend/dashboard/ s3://${{ secrets.S3_BUCKET }}/dashboard/
 
       - name: Invalidate CloudFront cache
         run: |
