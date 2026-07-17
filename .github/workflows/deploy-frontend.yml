@@ -23,6 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug OIDC token
+        run: |
+          echo "OIDC token requested"
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
+          echo "Token received"
+          echo "$TOKEN" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Claims:', d.get('value','')[:100]+'...')" 2>/dev/null || echo "Could not decode"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -34,3 +42,9 @@ jobs:
           aws s3 sync . s3://${{ secrets.S3_BUCKET }} \
             --exclude ".git/*" \
             --delete
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id EMIUUC0YN2RQ7 \
+            --paths "/*"
