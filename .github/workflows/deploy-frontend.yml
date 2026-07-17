@@ -23,37 +23,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Assume role with OIDC
+      - name: Assume role via python
         shell: bash
         run: |
           set +e
-          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" 2>&1)
-          echo "OIDC token response: $TOKEN" | head -c 200
-          echo ""
-          TOKEN_VAL=$(echo "$TOKEN" | python3 -c "import json,sys; print(json.load(sys.stdin)['value'])" 2>&1)
-          echo "Token extracted successfully"
+          python3 << 'PYEOF'
+import json, urllib.request, urllib.parse, xml.etree.ElementTree as ET, os, base64
 
-          echo "Calling AssumeRoleWithWebIdentity..."
-          CREDS_JSON=$(aws sts assume-role-with-web-identity \
-            --role-arn arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy \
-            --role-session-name GitHubActions \
-            --web-identity-token "$TOKEN_VAL" \
-            --duration-seconds 3600 \
-            --region us-east-1 2>&1)
-          RC=$?
-          echo "Exit code: $RC"
-          echo "Output: $CREDS_JSON"
-          echo "$CREDS_JSON" | python3 -m json.tool 2>/dev/null
+url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL'] + '&audience=sts.amazonaws.com'
+tok = os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']
+req = urllib.request.Request(url, headers={'Authorization': f'bearer {tok}'})
+oidc = json.loads(urllib.request.urlopen(req).read())
+token = oidc['value']
 
-          if [ $RC -eq 0 ]; then
-            echo "Setting AWS credentials..."
-            echo "AWS_ACCESS_KEY_ID=$(echo "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['Credentials']['AccessKeyId'])")" >> "$GITHUB_ENV"
-            echo "AWS_SECRET_ACCESS_KEY=$(echo "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['Credentials']['SecretAccessKey'])")" >> "$GITHUB_ENV"
-            echo "AWS_SESSION_TOKEN=$(echo "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['Credentials']['SessionToken'])")" >> "$GITHUB_ENV"
-            echo "AWS_REGION=us-east-1" >> "$GITHUB_ENV"
-          fi
-        continue-on-error: true
+# Decode JWT payload (no verification, just reading)
+parts = token.split('.')
+payload = parts[1]
+# Add padding
+payload += '=' * (4 - len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+print('JWT claims:')
+for k, v in claims.items():
+    print(f'  {k}: {v}')
+
+params = urllib.parse.urlencode({
+    'Action': 'AssumeRoleWithWebIdentity',
+    'Version': '2011-06-15',
+    'RoleArn': 'arn:aws:iam::382975714531:role/github-fastgrowth-s3-deploy',
+    'RoleSessionName': 'GitHubActions',
+    'DurationSeconds': '3600',
+    'WebIdentityToken': token
+}).encode()
+
+try:
+    resp = urllib.request.urlopen(
+        urllib.request.Request('https://sts.us-east-1.amazonaws.com', data=params),
+        timeout=30
+    )
+    body = resp.read().decode()
+    root = ET.fromstring(body)
+    creds = root.find('.//{https://sts.amazonaws.com/doc/2011-06-15/}Credentials')
+    if creds is not None:
+        aki = creds.find('{https://sts.amazonaws.com/doc/2011-06-15/}AccessKeyId').text
+        sak = creds.find('{https://sts.amazonaws.com/doc/2011-06-15/}SecretAccessKey').text
+        st = creds.find('{https://sts.amazonaws.com/doc/2011-06-15/}SessionToken').text
+        with open(os.environ['GITHUB_ENV'], 'a') as f:
+            f.write(f'AWS_ACCESS_KEY_ID={aki}\n')
+            f.write(f'AWS_SECRET_ACCESS_KEY={sak}\n')
+            f.write(f'AWS_SESSION_TOKEN={st}\n')
+            f.write('AWS_REGION=us-east-1\n')
+        print('SUCCESS: Credentials set!')
+    else:
+        print('FAILED:', body[:1000])
+except Exception as e:
+    print(f'EXCEPTION: {e}')
+    if hasattr(e, 'read'):
+        print(e.read().decode()[:1000])
+PYEOF
+          echo "Exit code: $?"
 
       - name: Sync to S3
         run: |
