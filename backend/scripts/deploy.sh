@@ -48,5 +48,5 @@ pm2 status
 
 echo ""
 echo "==========================================="
-echo "✅ Deployment Successful"
+echo "✅ Deployment Successful. Hurray!"
 echo "==========================================="
