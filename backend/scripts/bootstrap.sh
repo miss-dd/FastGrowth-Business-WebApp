@@ -55,5 +55,5 @@ pm2 startup systemd -u ec2-user --hp /home/ec2-user
 sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ec2-user --hp /home/ec2-user
 
 echo "==> Bootstrap complete!"
-echo "Next: clone your repo to /var/www/fastgrowth/backend, add .env, then run:"
+echo "Next::: clone your repo to /var/www/fastgrowth/backend, add .env, then run:"
 echo "  cd /var/www/fastgrowth/backend && npm install && npm run migrate && pm2 start ecosystem.config.js --env production && pm2 save"
